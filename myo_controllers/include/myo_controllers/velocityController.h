@@ -1,21 +1,27 @@
-#ifndef __EXAMPLECONTROLLER_H
-#define __EXAMPLECONTROLLER_H
+#ifndef __VELOCITYCONTROLLER_H
+#define __VELOCITYCONTROLLER_H
 
 #include <controller_interface/controller.h>
 #include <myo_interface/myoMuscleJointInterface.h>
 #include <pluginlib/class_list_macros.h>
+// ROS Stuff
 #include <ros/ros.h>
+#include <realtime_tools/realtime_publisher.h>
+
+// Messages
 #include <myo_msgs/SetVelocity.h>
+#include <myo_msgs/statusMessage.h>
 
 namespace myo_controllers{
 
-class ExampleController : public controller_interface::Controller<myo_interface::MyoMuscleJointInterface>
+class velocityController : public controller_interface::Controller<myo_interface::MyoMuscleJointInterface>
 {
 public:
   double pwm;
   double ref;
 
   ros::ServiceServer srv_;
+  realtime_tools::RealtimePublisher<myo_msgs::statusMessage> *realtime_pub;
 
   bool setVelocity( myo_msgs::SetVelocity::Request& req,
                     myo_msgs::SetVelocity::Response& resp)
@@ -43,7 +49,8 @@ public:
     // get the joint object to use in the realtime loop
     joint_ = hw->getHandle(my_joint);  // throws on failure
 
-    srv_ = n.advertiseService("set_velocity", &ExampleController::setVelocity, this);
+    srv_ = n.advertiseService("set_velocity", &velocityController::setVelocity, this);
+    realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(n, "DebugMessage", 4);
 
     return true;
   }
@@ -52,7 +59,6 @@ public:
   {
     int hz = 1000;
 
-    ros::Rate r(hz);
     // get sensor values
     double position = joint_.getPosition();
     double velocity = joint_.getVelocity();
@@ -64,7 +70,21 @@ public:
     if(abs(pwm) > 2000)
       pwm = 0.05*ref + pwm/abs(pwm) *2000;
     joint_.setCommand(pwm);
-    r.sleep();
+    if (realtime_pub->trylock()){
+      /*  float64  dt
+          float64  position
+          float64  velocity
+          float64  velocity_ref
+          float64  commanded_effort
+          float64  analogIN0          */
+      realtime_pub->msg_.position         = position;
+      realtime_pub->msg_.velocity         = velocity;
+      realtime_pub->msg_.velocity_ref      = ref;
+      realtime_pub->msg_.analogIN0         = analogIN0;
+      realtime_pub->msg_.dt               = ros::Time::now();
+      realtime_pub->msg_.commanded_effort = pwm;
+      realtime_pub->unlockAndPublish();
+    }
   }
 
   void starting(const ros::Time& time) { }

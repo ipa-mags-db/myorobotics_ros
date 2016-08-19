@@ -9,4 +9,13 @@
 		</description>
 	</class>
 	
+	<class
+		name="myo_controllers/velocityController"
+		type="myo_controllers::velocityController"
+		base_class_type="controller_interface::ControllerBase">
+		<description>
+			This is a velocity Controller.
+		</description>
+	</class>
+
 </library>
