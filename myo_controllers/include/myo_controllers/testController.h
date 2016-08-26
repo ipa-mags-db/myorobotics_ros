@@ -1,6 +1,7 @@
-#ifndef __VELOCITYCONTROLLER_H
-#define __VELOCITYCONTROLLER_H
+#ifndef __testController_H
+#define __testController_H
 
+#include <time.h>
 #include <controller_interface/controller.h>
 #include <myo_interface/myoMuscleJointInterface.h>
 #include <pluginlib/class_list_macros.h>
@@ -14,11 +15,14 @@
 
 namespace myo_controllers{
 
-class velocityController : public controller_interface::Controller<myo_interface::MyoMuscleJointInterface>
+class testController : public controller_interface::Controller<myo_interface::MyoMuscleJointInterface>
 {
 public:
   double pwm;
   double ref;
+  struct timespec no;
+  struct timespec b;
+  double beforePos;
 
   ros::ServiceServer srv_;
   realtime_tools::RealtimePublisher<myo_msgs::statusMessage> *realtime_pub;
@@ -26,9 +30,9 @@ public:
   bool setVelocity( myo_msgs::SetVelocity::Request& req,
                     myo_msgs::SetVelocity::Response& resp)
   {
-    if (fabs(req.velocity) < 80){
+    if (fabs(req.velocity) < 300){
       ref = req.velocity;
-      ROS_INFO("Change velocity to 100");
+      ROS_INFO("Change velocity to %f",ref);
     } else
       ROS_WARN("Superduper error");
 
@@ -41,6 +45,7 @@ public:
     std::string my_joint;
     ref = 10;
     pwm = 0;
+    clock_gettime(CLOCK_MONOTONIC,&no);
     if (!n.getParam("joint", my_joint)){
       ROS_ERROR("Could not find joint name");
       return false;
@@ -49,8 +54,9 @@ public:
     // get the joint object to use in the realtime loop
     joint_ = hw->getHandle(my_joint);  // throws on failure
 
-    srv_ = n.advertiseService("set_velocity", &velocityController::setVelocity, this);
+    srv_ = n.advertiseService("set_velocity", &testController::setVelocity, this);
     realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(n, "DebugMessage", 4);
+    beforePos = joint_.getPosition();
 
     return true;
   }
@@ -58,6 +64,11 @@ public:
   void update(const ros::Time& time, const ros::Duration& period)
   {
     int hz = 1000;
+    b = no;
+    clock_gettime(CLOCK_MONOTONIC,&no);
+
+    ros::Time thisMoment(no.tv_sec, no.tv_nsec  );
+    ros::Time beforeMoment(b.tv_sec, b.tv_nsec);
 
     // get sensor values
     double position = joint_.getPosition();
@@ -78,13 +89,14 @@ public:
           float64  commanded_effort
           float64  analogIN0          */
       realtime_pub->msg_.position         = position;
-      realtime_pub->msg_.velocity         = velocity;
+      realtime_pub->msg_.velocity         = (position-beforePos)/( (no.tv_sec - b.tv_sec) + (no.tv_nsec - b.tv_nsec)/1e9   );
       realtime_pub->msg_.velocity_ref      = ref;
       realtime_pub->msg_.analogIN0         = analogIN0;
-      realtime_pub->msg_.dt               = ros::Time::now() - ros::Time::now();
+      realtime_pub->msg_.dt               = thisMoment - beforeMoment;
       realtime_pub->msg_.commanded_effort = pwm;
       realtime_pub->unlockAndPublish();
     }
+    beforePos = position;
   }
 
   void starting(const ros::Time& time) { }

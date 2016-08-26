@@ -123,6 +123,7 @@ include_directories( include
 add_library(myo_controllers
   src/ExampleController.cpp
   src/velocityController.cpp
+  src/testController.cpp
 )
 
 ## Add cmake target dependencies of the library

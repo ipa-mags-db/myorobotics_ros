@@ -1,4 +1,4 @@
-time	 dt
+duration dt
 float64  position
 float64  velocity
 float64  velocity_ref
