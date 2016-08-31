@@ -30,7 +30,7 @@ public:
   bool setVelocity( myo_msgs::SetVelocity::Request& req,
                     myo_msgs::SetVelocity::Response& resp)
   {
-    if (fabs(req.velocity) < 300){
+    if (fabs(req.velocity) < 5000){
       ref = req.velocity;
       ROS_INFO("Change velocity to %f",ref);
     } else
@@ -54,8 +54,10 @@ public:
     // get the joint object to use in the realtime loop
     joint_ = hw->getHandle(my_joint);  // throws on failure
 
+    // create new service for setting the velocity and bind setVelocity as callback
     srv_ = n.advertiseService("set_velocity", &testController::setVelocity, this);
-    realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(n, "DebugMessage", 4);
+    // create realtime publisher with a buffer for 25 messages
+    realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(n, "DebugMessage", 25);
     beforePos = joint_.getPosition();
 
     return true;
@@ -63,7 +65,7 @@ public:
 
   void update(const ros::Time& time, const ros::Duration& period)
   {
-    int hz = 1000;
+    // get excact time right now via clock_gettime
     b = no;
     clock_gettime(CLOCK_MONOTONIC,&no);
 
@@ -76,11 +78,19 @@ public:
     double effort = joint_.getEffort();
     double displacement = joint_.getDisplacement();
     double analogIN0 = joint_.getAnalogIn(0);
-    // set pwm cycle [-4000;4000]
-    pwm = pwm -0.3*(velocity*hz/1000 - ref);
-    if(abs(pwm) > 2000)
-      pwm = 0.05*ref + pwm/abs(pwm) *2000;
-    joint_.setCommand(pwm);
+    double current = joint_.getEffort();
+
+    // set pwm cycle [-4000;4000], here for safety reasons bound to [-500,500]
+    // also calculate ref[RPM] to ref[Encodervalues/ms] : ~10240/60*1000 RPM = 1 ENC/ms
+
+    double rpmref = (10240.0/60000.0)*ref;
+    pwm = pwm -0.3*(velocity - rpmref);
+    double pwmk = 0.05*rpmref + pwm;
+    if(abs(pwmk) > 2000)
+      pwmk = pwmk/abs(pwmk) *2000;
+    joint_.setCommand(pwmk);
+
+    // realtime publish stuff (i.e. buffer and publish when ever possible)
     if (realtime_pub->trylock()){
       /*  float64  dt
           float64  position
@@ -89,16 +99,18 @@ public:
           float64  commanded_effort
           float64  analogIN0          */
       realtime_pub->msg_.position         = position;
-      realtime_pub->msg_.velocity         = (position-beforePos)/( (no.tv_sec - b.tv_sec) + (no.tv_nsec - b.tv_nsec)/1e9   );
-      realtime_pub->msg_.velocity_ref      = ref;
-      realtime_pub->msg_.analogIN0         = analogIN0;
+      realtime_pub->msg_.velocity         = velocity;
+      realtime_pub->msg_.velocity_ref     = rpmref;
+      realtime_pub->msg_.analogIN0        = analogIN0;
       realtime_pub->msg_.dt               = thisMoment - beforeMoment;
+      realtime_pub->msg_.current          = current;
       realtime_pub->msg_.commanded_effort = pwm;
       realtime_pub->unlockAndPublish();
     }
     beforePos = position;
   }
 
+  // dummy stuff
   void starting(const ros::Time& time) { }
   void stopping(const ros::Time& time) { }
 
