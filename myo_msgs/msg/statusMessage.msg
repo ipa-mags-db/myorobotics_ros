@@ -5,3 +5,5 @@ float64  velocity_ref
 float64  current
 float64  commanded_effort
 float64  analogIN0
+int32    maxpos
+int32    minpos

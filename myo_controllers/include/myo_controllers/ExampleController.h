@@ -60,11 +60,17 @@ public:
     double displacement = joint_.getDisplacement();
     double analogIN0 = joint_.getAnalogIn(0);
     // set pwm cycle [-4000;4000]
+<<<<<<< HEAD
     pwm = pwm -0.3*(velocity*hz/1000 - ref);
     if(abs(pwm) > 2000)
       pwm = 0.05*ref + pwm/abs(pwm) *2000;
     joint_.setCommand(pwm);
     r.sleep();
+=======
+    joint_.setCommand(200);
+    // set digitalOut
+    joint_.setDigitalOut(true);
+>>>>>>> origin/with_digital_out
   }
 
   void starting(const ros::Time& time) { }
