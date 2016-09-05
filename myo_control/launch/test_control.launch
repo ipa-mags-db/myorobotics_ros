@@ -4,9 +4,9 @@
 
   <rosparam ns="myo">
     myo_muscle0_controller:
-      type: myo_controllers/testController
+      type: myo_controllers/velocityController
       joint: 'muscle2'
-      
+
   </rosparam>
 
   <!-- Load the default controllers -->
