@@ -9,7 +9,7 @@
 #include <realtime_tools/realtime_publisher.h>
 
 // Messages
-#include <myo_msgs/SetVelocity.h>
+#include <myo_msgs/SetReference.h>
 #include <myo_msgs/statusMessage.h>
 
 #define MAXCUR 200
@@ -21,6 +21,7 @@ class velocityController : public controller_interface::Controller<myo_interface
 {
 public:
 
+  // Struct to hold all values used more than one cycle
   struct SaveVals
   {
     double  pwm;
@@ -35,22 +36,32 @@ public:
   ros::ServiceServer srv_;
   realtime_tools::RealtimePublisher<myo_msgs::statusMessage> *realtime_pub;
 
-  bool setVelocity( myo_msgs::SetVelocity::Request& req,
-                    myo_msgs::SetVelocity::Response& resp)
+
+
+  //----------------------
+  //-- ROS Service call --
+  //----------------------
+  bool setReference( myo_msgs::SetReference::Request& req,
+                    myo_msgs::SetReference::Response& resp)
   {
-    if (fabs(req.velocity) < 200){
-      saveVals.ref = req.velocity;
+    if (fabs(req.reference) < 200){
+      saveVals.ref = req.reference;
       ROS_INFO("Change velocity to %f",saveVals.ref);
     } else
       ROS_WARN("Velocity set too high! Max is +/-80");
 
-    resp.velocity = saveVals.ref;
+    resp.reference = saveVals.ref;
   }
+
+
 
   bool setClutch(bool input){
     joint_.setDigitalOut(input);
     //ROS_INFO("Setting Clutch to %d",input);
   }
+
+
+
   bool init(myo_interface::MyoMuscleJointInterface* hw, ros::NodeHandle &n)
   {
     // get joint name from the parameter server
@@ -71,7 +82,7 @@ public:
     joint_ = hw->getHandle(my_joint);  // throws on failure
 
     // Advertise Service and Publisher
-    srv_ = n.advertiseService("set_velocity", &velocityController::setVelocity, this);
+    srv_ = n.advertiseService("set_reference", &velocityController::setReference, this);
     realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(n, "DebugMessage", 4);
 
     // Clutch on
