@@ -13,6 +13,7 @@
 #include <myo_msgs/statusMessage.h>
 
 #define MAXCUR 200
+#define MAXREF 200
 
 
 namespace myo_controllers{
@@ -24,12 +25,13 @@ public:
   // Struct to hold all values used more than one cycle
   struct SaveVals
   {
-    double  pwm;
-    double  ref;
-    double  vel_ref;
-    double  filteredCurrent;
-    double  displacement_ref;
-    bool    clutchState;
+    double          pwm;
+    double          ref;
+    double          vel_ref;
+    double          filteredCurrent;
+    double          displacement_ref;
+    bool            clutchState;
+    struct timespec oldTime;
   } saveVals;
 
 
@@ -44,11 +46,11 @@ public:
   bool setReference( myo_msgs::SetReference::Request& req,
                     myo_msgs::SetReference::Response& resp)
   {
-    if (fabs(req.reference) < 200){
+    if (fabs(req.reference) < MAXREF){
       saveVals.ref = req.reference;
       ROS_INFO("Change velocity to %f",saveVals.ref);
     } else
-      ROS_WARN("Velocity set too high! Max is +/-80");
+      ROS_WARN("Velocity set too high! Max is +/-%d",MAXREF);
 
     resp.reference = saveVals.ref;
   }
@@ -57,7 +59,7 @@ public:
 
   bool setClutch(bool input){
     joint_.setDigitalOut(input);
-    //ROS_INFO("Setting Clutch to %d",input);
+    ROS_INFO("Setting Clutch to %d",input);
   }
 
 
@@ -77,6 +79,9 @@ public:
     saveVals.filteredCurrent = 0;
     saveVals.pwm = 0;
     saveVals.clutchState = true;
+    struct timespec no;
+    clock_gettime(CLOCK_MONOTONIC,&no);
+    saveVals.oldTime = no;
 
     // get the joint object to use in the realtime loop
     joint_ = hw->getHandle(my_joint);  // throws on failure
@@ -104,8 +109,9 @@ public:
     double displacement = joint_.getDisplacement();
     double analogIN0 = joint_.getAnalogIn(0);
 
+
     // filter current
-    saveVals.filteredCurrent = 0.99*saveVals.filteredCurrent + 0.01*effort;
+    saveVals.filteredCurrent = 0.95*saveVals.filteredCurrent + 0.05*effort;
 
     //-----------------------------
     //-- Displacement Controller --
@@ -124,6 +130,13 @@ public:
     joint_.setCommand(saveVals.pwm);
 
 
+    //------------------
+    //-- Calculate dt --
+    //------------------
+    struct timespec no;
+    clock_gettime(CLOCK_MONOTONIC, &no);
+    ros::Duration dur(no.tv_sec - saveVals.oldTime.tv_sec, no.tv_nsec - saveVals.oldTime.tv_nsec);
+    saveVals.oldTime = no;
 
     //-------------------------
     //-- Current SavetyBreak --
@@ -131,10 +144,12 @@ public:
     if (fabs(saveVals.filteredCurrent) > MAXCUR){
       ROS_WARN("Current was %f > %d", fabs(saveVals.filteredCurrent),MAXCUR);
       saveVals.clutchState = false;
+      // Set Clutch
+      setClutch(saveVals.clutchState);
     }
 
-    // Set Clutch
-    setClutch(saveVals.clutchState);
+
+
 
 
     //-------------------
@@ -151,7 +166,7 @@ public:
       realtime_pub->msg_.velocity         = velocity;
       realtime_pub->msg_.velocity_ref     = saveVals.vel_ref;
       realtime_pub->msg_.analogIN0        = analogIN0;
-      realtime_pub->msg_.dt               = ros::Time::now() - ros::Time::now();
+      realtime_pub->msg_.dt               = dur;
       realtime_pub->msg_.commanded_effort = effort;
       realtime_pub->msg_.displacement      = displacement;
       realtime_pub->msg_.displacement_ref  = saveVals.ref;
