@@ -1,5 +1,5 @@
-#ifndef __VELOCITYCONTROLLER_H
-#define __VELOCITYCONTROLLER_H
+#ifndef __DIRECTCONTROLLER_H
+#define __DIRECTCONTROLLER_H
 
 #include <controller_interface/controller.h>
 #include <myo_interface/myoMuscleJointInterface.h>
@@ -10,17 +10,18 @@
 
 // Messages
 #include <myo_msgs/SetReference.h>
+#include <myo_msgs/SetClutch.h>
 #include <myo_msgs/SetPID.h>
 #include <myo_msgs/statusMessage.h>
 
-#define MAXCUR 500
-#define MAXREF 200
-#define MAXPWM 2000
+#define MAXCUR 50000
+#define MAXREF 3999
+#define MAXPWM 3999
 
 
 namespace myo_controllers{
 
-class velocityController : public controller_interface::Controller<myo_interface::MyoMuscleJointInterface>
+class directController : public controller_interface::Controller<myo_interface::MyoMuscleJointInterface>
 {
 public:
 
@@ -44,20 +45,15 @@ public:
     double  igain;
     double  dgain;
     double  ffgain;
-    double  ffset;
   } pid;
 
 
   // reserve memory for Service & Topic Broadcaster
-  ros::ServiceServer pidsrv_;
-  ros::ServiceServer refsrv_;
+  ros::ServiceServer srvPID_;
+  ros::ServiceServer srvREF_;
+  ros::ServiceServer srvCL_;
   realtime_tools::RealtimePublisher<myo_msgs::statusMessage> *realtime_pub;
 
-
-
-  template <typename T> int sgn(T val){
-    return ((T(0) < val) - (val < T(0)));
-  }
 
 
   //----------------------
@@ -78,30 +74,36 @@ public:
   bool setPID( myo_msgs::SetPID::Request& req,
                myo_msgs::SetPID::Response& resp)
   {
-    if((req.pgain > -100) && (req.pgain <= 0) &&
-       (req.igain > -100) && (req.igain <= 0) &&
-       (req.dgain > -100) && (req.dgain <= 0) ){
+    if((req.pgain > -30) && (req.pgain <= 0) &&
+       (req.igain > -20) && (req.igain <= 0) &&
+       (req.pgain > -20) && (req.pgain <= 0) ){
       pid.pgain   = req.pgain;
       pid.igain   = req.igain;
       pid.dgain   = req.dgain;
       pid.ffgain  = req.ffgain;
-      pid.ffset   = req.ffset;
 
-      ROS_INFO("Change PID to P: %f, I: %f, D:%f, FFG: %f, FFS: %f",pid.pgain, pid.igain, pid.dgain, pid.ffgain, pid.ffset);
-    } else {
+      ROS_INFO("Change PID to P: %f, I: %f, D:%f",pid.pgain, pid.igain, pid.dgain);
+    } else
         ROS_WARN("Reference set too high!");
-        ROS_WARN("You tried to set to: P: %f, I: %f, D:%f, FFG: %f, FFS: %f",req.pgain, req.igain, req.dgain, req.ffgain, req.ffset);
-      }
+
       resp.pgain  = pid.pgain;
       resp.igain  = pid.igain;
       resp.dgain  = pid.dgain;
       resp.ffgain = pid.ffgain;
-      resp.ffset  = pid.ffset;
+  }
+
+  bool setClutchState( myo_msgs::SetClutch::Request& req,
+                       myo_msgs::SetClutch::Response& resp)
+  {
+    bool nState = req.clutchState;
+    setClutch(nState);
+    resp.clutchState = saveVals.clutchState;
   }
 
 
   bool setClutch(bool input){
     joint_.setDigitalOut(input);
+    saveVals.clutchState = input;
     ROS_INFO("Setting Clutch to %d",input);
   }
 
@@ -118,7 +120,7 @@ public:
 
     // Init Values to 0
     saveVals.vel_ref = 0;
-    saveVals.ref = 10;
+    saveVals.ref = 0;
     saveVals.filteredCurrent = 0;
     saveVals.pwm = 0;
     saveVals.clutchState = true;
@@ -127,8 +129,6 @@ public:
     pid.pgain = -10;
     pid.igain = 0;
     pid.dgain = 0;
-    pid.ffgain = 1;
-    pid.ffset  = 0;
 
     struct timespec no;
     clock_gettime(CLOCK_MONOTONIC,&no);
@@ -138,12 +138,14 @@ public:
     joint_ = hw->getHandle(my_joint);  // throws on failure
 
     // Advertise Service and Publisher
-    refsrv_ = n.advertiseService("set_reference", &velocityController::setReference, this);
-    pidsrv_ = n.advertiseService("set_pid", &velocityController::setPID, this);
+    srvREF_ = n.advertiseService("set_reference", &directController::setReference,    this);
+    srvPID_ = n.advertiseService("set_pid",       &directController::setPID,          this);
+    srvCL_  = n.advertiseService("set_clutch",    &directController::setClutchState,  this);
+
     realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(n, "DebugMessage", 25);
 
     // Clutch on
-    setClutch(false);
+    setClutch(true);
 
     // Exit graciously
     return true;
@@ -171,17 +173,19 @@ public:
 
     // parameter:
 
-    saveVals.vel_ref = saveVals.ref;
+    saveVals.pwm = saveVals.ref;
 
-
+    //---------------------------------
+    //--NOT USED IN DIRECT CONTROLLER--
+    //---------------------------------
+    /*
     // Feedforward
-    saveVals.pwm = (saveVals.vel_ref -  pid.ffset*sgn(saveVals.vel_ref))/pid.ffgain;
+    saveVals.pwm = pid.ffgain*saveVals.vel_ref;
 
     // Feedback P-Controller
       // calc error
-      double err = velocity - saveVals.vel_ref;
-      if(pid.igain != 0)
-        saveVals.errSum += err;
+      double err = velocity * hz/1000 - saveVals.vel_ref;
+      saveVals.errSum += err;
 
       // P Gain
       saveVals.pwm += pid.pgain*err;
@@ -195,18 +199,11 @@ public:
       // update oldError sum
       saveVals.err = err;
 
+    */
 
-
-
-    double pwm_before = saveVals.pwm;
-
-    // limit pwm to +/-3999
-    if(fabs(saveVals.pwm) > MAXPWM)
-      saveVals.pwm = sgn(saveVals.pwm) *MAXPWM;
-
-    // anti-Windup
-    saveVals.errSum += 10*(pwm_before - saveVals.pwm);
-
+    // set saveVals.pwm cycle [-4000;4000]
+    if(abs(saveVals.pwm) > MAXPWM)
+      saveVals.pwm = saveVals.pwm/abs(saveVals.pwm) *MAXPWM;
     joint_.setCommand(saveVals.pwm);
 
 
@@ -231,7 +228,6 @@ public:
 
 
 
-
     //-------------------
     //-- Publish stuff --
     //-------------------
@@ -242,7 +238,7 @@ public:
           float64  velocity_ref
           float64  commanded_effort
           float64  analogIN0          */
-      realtime_pub->msg_.position           = saveVals.errSum;//position;
+      realtime_pub->msg_.position           = position;
       realtime_pub->msg_.velocity           = velocity;
       realtime_pub->msg_.velocity_ref       = saveVals.vel_ref;
       realtime_pub->msg_.analogIN0          = analogIN0;

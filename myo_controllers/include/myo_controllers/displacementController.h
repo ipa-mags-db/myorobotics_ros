@@ -4,15 +4,17 @@
 #include <controller_interface/controller.h>
 #include <myo_interface/myoMuscleJointInterface.h>
 #include <pluginlib/class_list_macros.h>
+
 // ROS Stuff
 #include <ros/ros.h>
 #include <realtime_tools/realtime_publisher.h>
 
 // Messages
 #include <myo_msgs/SetReference.h>
+#include <myo_msgs/SetPID.h>
 #include <myo_msgs/statusMessage.h>
 
-#define MAXCUR 200
+#define MAXCUR 1000
 #define MAXREF 200
 #define MAXPWM 4000
 
@@ -32,14 +34,32 @@ public:
     double          filteredCurrent;
     double          displacement_ref;
     bool            clutchState;
+    double          err;
+    double          errSum;
+    double          errSumDisp;
     struct timespec oldTime;
   } saveVals;
 
+  struct PID
+  {
+    double  pgain;
+    double  igain;
+    double  dgain;
+    double  ffgain;
+    double  ffset;
+  } pid;
+
 
   // reserve memory for Service & Topic Broadcaster
-  ros::ServiceServer srv_;
+  ros::ServiceServer pidsrv_;
+  ros::ServiceServer refsrv_;
   realtime_tools::RealtimePublisher<myo_msgs::statusMessage> *realtime_pub;
 
+
+
+  template <typename T> int sgn(T val){
+    return ((T(0) < val) - (val < T(0)));
+  }
 
 
   //----------------------
@@ -57,6 +77,29 @@ public:
     resp.reference = saveVals.ref;
   }
 
+  bool setPID( myo_msgs::SetPID::Request& req,
+               myo_msgs::SetPID::Response& resp)
+  {
+    if((req.pgain > -100) && (req.pgain <= 0) &&
+       (req.igain > -100) && (req.igain <= 0) &&
+       (req.dgain > -100) && (req.dgain <= 0) ){
+      pid.pgain   = req.pgain;
+      pid.igain   = req.igain;
+      pid.dgain   = req.dgain;
+      pid.ffgain  = req.ffgain;
+      pid.ffset   = req.ffset;
+
+      ROS_INFO("Change PID to P: %f, I: %f, D:%f, FFG: %f, FFS: %f",pid.pgain, pid.igain, pid.dgain, pid.ffgain, pid.ffset);
+    } else {
+        ROS_WARN("Reference set too high!");
+        ROS_WARN("You tried to set to: P: %f, I: %f, D:%f, FFG: %f, FFS: %f",req.pgain, req.igain, req.dgain, req.ffgain, req.ffset);
+      }
+      resp.pgain  = pid.pgain;
+      resp.igain  = pid.igain;
+      resp.dgain  = pid.dgain;
+      resp.ffgain = pid.ffgain;
+      resp.ffset  = pid.ffset;
+  }
 
 
   bool setClutch(bool input){
@@ -81,16 +124,25 @@ public:
     saveVals.filteredCurrent = 0;
     saveVals.pwm = 0;
     saveVals.clutchState = true;
+    saveVals.err = 0;
+    saveVals.errSum = 0;
+    saveVals.errSumDisp = 0;
+    pid.pgain = -10;
+    pid.igain = 0;
+    pid.dgain = -2;
+    pid.ffgain = 1;
+    pid.ffset  = 0;
+
     struct timespec no;
     clock_gettime(CLOCK_MONOTONIC,&no);
     saveVals.oldTime = no;
 
     // get the joint object to use in the realtime loop
     joint_ = hw->getHandle(my_joint);  // throws on failure
-      realtime_pub->msg_.displacement_ref   = saveVals.ref;
 
     // Advertise Service and Publisher
-    srv_ = n.advertiseService("set_reference", &displacementController::setReference, this);
+    refsrv_ = n.advertiseService("set_reference", &displacementController::setReference, this);
+    pidsrv_ = n.advertiseService("set_pid", &displacementController::setPID, this);
     realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(n, "DebugMessage", 25);
 
     // Clutch on
@@ -106,32 +158,64 @@ public:
     int hz = 1000;
 
     // get sensor values
-    double position = joint_.getPosition();
-    double velocity = joint_.getVelocity();
-    double effort = joint_.getEffort();
-    double displacement = joint_.getDisplacement();
-    double analogIN0 = joint_.getAnalogIn(0);
+    double position       = joint_.getPosition();
+    double velocity       = joint_.getVelocity();
+    double effort         = joint_.getEffort();
+    double displacement   = joint_.getDisplacement();
+    double analogIN0      = joint_.getAnalogIn(0);
 
 
     // filter current
     saveVals.filteredCurrent = 0.95*saveVals.filteredCurrent + 0.05*effort;
 
+
     //-----------------------------
     //-- Displacement Controller --
     //-----------------------------
-    saveVals.vel_ref =  -0.25*(saveVals.ref - displacement);
+    double errdisp = (saveVals.ref - displacement);
+    saveVals.errSumDisp += errdisp;
 
+    saveVals.vel_ref = -35*(saveVals.ref - displacement) - 0 * saveVals.errSumDisp;
 
     //-------------------------
     //-- Velocity Controller --
-
     //-------------------------
-    //-- Velocity Controller --
-    saveVals.pwm += 0.05*saveVals.vel_ref;
 
-    // set saveVals.pwm cycle [-4000;4000]
-    if(abs(saveVals.pwm) > MAXPWM)
-      saveVals.pwm = saveVals.pwm/abs(saveVals.pwm) *MAXPWM;
+
+    // Feedforward
+    saveVals.pwm = pid.ffgain * saveVals.vel_ref + pid.ffset * sgn(saveVals.vel_ref);
+
+    // Feedback P-Controller
+      // calc error
+      double err = velocity - saveVals.vel_ref;
+      if(pid.igain != 0)
+        saveVals.errSum += err;
+
+      // P Gain
+      saveVals.pwm += pid.pgain*err;
+
+      // I Gain
+      saveVals.pwm += pid.igain*saveVals.errSum;
+
+      // D Gain
+      saveVals.pwm += pid.dgain*(err - saveVals.err);
+
+      // update oldError sum
+      saveVals.err = err;
+
+
+
+
+    double pwm_before = saveVals.pwm;
+
+    // limit pwm to +/-3999
+    if(fabs(saveVals.pwm) > MAXPWM)
+      saveVals.pwm = sgn(saveVals.pwm) *MAXPWM;
+
+    // anti-Windup
+    saveVals.errSum += 10*(pwm_before - saveVals.pwm);
+    //saveVals.errSumDisp += 10*(pwm_before - saveVals.pwm);
+
     joint_.setCommand(saveVals.pwm);
 
 
@@ -167,16 +251,16 @@ public:
           float64  velocity_ref
           float64  commanded_effort
           float64  analogIN0          */
-      realtime_pub->msg_.position          = position;
-      realtime_pub->msg_.velocity          = velocity;
-      realtime_pub->msg_.velocity_ref      = saveVals.vel_ref;
-      realtime_pub->msg_.analogIN0         = analogIN0;
-      realtime_pub->msg_.dt                = dur;
-      realtime_pub->msg_.commanded_effort  = effort;
-      realtime_pub->msg_.displacement      = displacement;
-      realtime_pub->msg_.displacement_ref  = saveVals.ref;
-      realtime_pub->msg_.current           = saveVals.filteredCurrent;
-      realtime_pub->msg_.clutchState       = saveVals.clutchState;
+      realtime_pub->msg_.position           = saveVals.errSum;//position;
+      realtime_pub->msg_.velocity           = velocity;
+      realtime_pub->msg_.velocity_ref       = saveVals.vel_ref;
+      realtime_pub->msg_.analogIN0          = analogIN0;
+      realtime_pub->msg_.dt                 = dur;
+      realtime_pub->msg_.commanded_effort   = saveVals.pwm;
+      realtime_pub->msg_.displacement       = displacement;
+      realtime_pub->msg_.displacement_ref   = saveVals.ref;
+      realtime_pub->msg_.current            = saveVals.errSumDisp;
+      realtime_pub->msg_.clutchState        = saveVals.clutchState;
       realtime_pub->unlockAndPublish();
     }
   }

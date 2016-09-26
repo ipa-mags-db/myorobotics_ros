@@ -5,7 +5,25 @@
 		type="myo_controllers::velocityController"
 		base_class_type="controller_interface::ControllerBase">
 		<description>
-			This is a velocity Controller.
+			This is a velocity Controller. (v [ENC/ms])
+		</description>
+	</class>
+
+	<class
+		name="myo_controllers/directController"
+		type="myo_controllers::directController"
+		base_class_type="controller_interface::ControllerBase">
+		<description>
+			This is a direct Controller. (pwm)
+		</description>
+	</class>
+
+	<class
+		name="myo_controllers/displacementController"
+		type="myo_controllers::displacementController"
+		base_class_type="controller_interface::ControllerBase">
+		<description>
+			This is a displacement Controller. [displacment in counts ~ 15 µm/count]
 		</description>
 	</class>
 

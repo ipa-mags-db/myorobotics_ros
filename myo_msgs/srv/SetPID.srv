@@ -2,8 +2,10 @@ float64 pgain
 float64 igain
 float64 dgain
 float64 ffgain
+float64 ffset
 ---
 float64 pgain
 float64 igain
 float64 dgain
 float64 ffgain
+float64 ffset
