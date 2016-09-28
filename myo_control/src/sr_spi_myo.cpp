@@ -194,12 +194,17 @@ int SrSPIMyo::initialize(hardware_interface::HardwareInterface *hw, bool allow_u
 	return 0;
 }
 
+
+//---------------------
+//--- Pack Commands ---
+//---------------------
 void SrSPIMyo::packCommand(unsigned char *buffer, bool halt, bool reset)
 {
 	RONEX_COMMAND_02000002* command = reinterpret_cast<RONEX_COMMAND_02000002*>(buffer);
 
 	// Set Command-Type
-	command->command_type = RONEX_COMMAND_02000002_COMMAND_TYPE_NORMAL;
+	command->command_type = RONEX_COMMAND_02000002_COMMAND_TYPE_NORMAL
+
 	// Configure SlaveSelect on all 4 SPI-Ports
 	int16u dio = 0;
 	if (joint_states_[0]->digitalOut_) dio |= PIN_OUTPUT_STATE_DIO_0;
@@ -214,7 +219,7 @@ void SrSPIMyo::packCommand(unsigned char *buffer, bool halt, bool reset)
 	{
 		// 64 MHz / 16 = 4 MHz
 		command->spi_out[spi_index].clock_divider = 16;
-		// Clock normally low, sample on falling edge 
+		// Clock normally low, sample on falling edge
 		command->spi_out[spi_index].SPI_config = SPI_CONFIG_MODE_01;
 		command->spi_out[spi_index].inter_byte_gap = 4;//0;
 		// Transmition length
@@ -246,6 +251,10 @@ void SrSPIMyo::packCommand(unsigned char *buffer, bool halt, bool reset)
 	}
 }
 
+
+//-----------------------
+//--- UnPack Commands ---
+//-----------------------
 bool SrSPIMyo::unpackState(unsigned char *this_buffer, unsigned char *prev_buffer)
 {
 	RONEX_STATUS_02000002* status_data = reinterpret_cast<RONEX_STATUS_02000002 *>(this_buffer+  command_size_);
