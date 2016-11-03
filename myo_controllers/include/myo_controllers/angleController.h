@@ -18,6 +18,9 @@
 #define MAXREF 200
 #define MAXPWM 4000
 
+#define MINANG 1000
+#define MAXANG 2500
+
 
 namespace myo_controllers{
 
@@ -41,7 +44,7 @@ namespace myo_controllers{
      * @param[in]   req     Adress to request msg
      * @param[out]  resp    Adress to responose msg
      */
-    void setReference( myo_msgs::SetReference::Request& req,
+    bool setReference( myo_msgs::SetReference::Request& req,
                       myo_msgs::SetReference::Response& resp)
     {
       if (fabs(req.reference) < MAXREF){
@@ -60,7 +63,7 @@ namespace myo_controllers{
      * @param[in]   req     Adress to request msg
      * @param[out]  resp    Adress to responose msg
      */
-    void setPID( myo_msgs::SetPID::Request& req,
+    bool setPID( myo_msgs::SetPID::Request& req,
                  myo_msgs::SetPID::Response& resp)
     {
       if((req.pgain > -100) && (req.pgain <= 0) &&
@@ -113,7 +116,7 @@ namespace myo_controllers{
 
       // Init Values to 0
       saveVals_.vel_ref = 0;
-      saveVals_.ref = 10;
+      saveVals_.ref = -10;
       saveVals_.filteredCurrent = 0;
       saveVals_.pwm = 0;
       saveVals_.clutchState = true;
@@ -145,6 +148,12 @@ namespace myo_controllers{
       return true;
     }
 
+    double calcAngle(double sensorVal){
+      double maxSensor = 4096;
+      double setPoint  = 2525;
+      return 360*(sensorVal-setPoint)/maxSensor;
+    }
+
 
     /*!
      * Function that gets called once in the control loop by the controller manager
@@ -169,13 +178,10 @@ namespace myo_controllers{
       saveVals_.filteredCurrent = 0.95*saveVals_.filteredCurrent + 0.05*effort;
 
 
-      //-----------------------------
-      //-- Displacement Controller --
-      //-----------------------------
-      double errdisp = (saveVals_.ref - displacement);
-      saveVals_.errSumDisp += errdisp;
-
-      saveVals_.vel_ref = -35*(saveVals_.ref - displacement) - 0 * saveVals_.errSumDisp;
+      //------------------------
+      //-- Angular Controller --
+      //------------------------
+      saveVals_.vel_ref = 10*(saveVals_.ref - calcAngle(analogIN0));
 
       //-------------------------
       //-- Velocity Controller --
@@ -250,7 +256,7 @@ namespace myo_controllers{
         realtime_pub_->msg_.position           = saveVals_.errSum;//position;
         realtime_pub_->msg_.velocity           = velocity;
         realtime_pub_->msg_.velocity_ref       = saveVals_.vel_ref;
-        realtime_pub_->msg_.analogIN0          = analogIN0;
+        realtime_pub_->msg_.analogIN0          = 360*(analogIN0-2525)/4096 ;
         realtime_pub_->msg_.dt                 = dur;
         realtime_pub_->msg_.commanded_effort   = saveVals_.pwm;
         realtime_pub_->msg_.displacement       = displacement;

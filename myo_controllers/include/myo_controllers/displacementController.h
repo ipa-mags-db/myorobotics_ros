@@ -14,7 +14,7 @@
 #include <myo_msgs/SetPID.h>
 #include <myo_msgs/statusMessage.h>
 
-#define MAXCUR 1000
+#define MAXCUR 500
 #define MAXREF 200
 #define MAXPWM 4000
 
@@ -38,6 +38,7 @@ public:
     double          errSum;
     double          errSumDisp;
     struct timespec oldTime;
+    double          oldPwm;
   } saveVals;
 
   struct PID
@@ -61,6 +62,11 @@ public:
     return ((T(0) < val) - (val < T(0)));
   }
 
+  double calcAngle(double sensorVal){
+    double maxSensor = 4096;
+    double setPoint  = 2525;
+    return 360*(sensorVal-setPoint)/maxSensor;
+  }
 
   //----------------------
   //-- ROS Service call --
@@ -120,13 +126,14 @@ public:
 
     // Init Values to 0
     saveVals.vel_ref = 0;
-    saveVals.ref = 10;
+    saveVals.ref = 4;
     saveVals.filteredCurrent = 0;
     saveVals.pwm = 0;
     saveVals.clutchState = true;
     saveVals.err = 0;
     saveVals.errSum = 0;
     saveVals.errSumDisp = 0;
+    saveVals.oldPwm = 0;
     pid.pgain = -10;
     pid.igain = 0;
     pid.dgain = -2;
@@ -216,7 +223,20 @@ public:
     saveVals.errSum += 10*(pwm_before - saveVals.pwm);
     //saveVals.errSumDisp += 10*(pwm_before - saveVals.pwm);
 
+    //------------------------
+    //-- Compensate BackEMF --
+    //------------------------
+
+    double maxPWM = 2000 - 20*fabs(velocity);
+    if(maxPWM < 200)
+      maxPWM = 200;
+
+    // Check if pwm change violates backEMF condition
+    if(fabs(saveVals.pwm -saveVals.oldPwm) > maxPWM)
+      saveVals.pwm = sgn(saveVals.pwm-saveVals.oldPwm)*maxPWM + saveVals.oldPwm;
     joint_.setCommand(saveVals.pwm);
+
+    saveVals.oldPwm = saveVals.pwm;
 
 
     //------------------
@@ -235,10 +255,8 @@ public:
       saveVals.clutchState = false;
       // Set Clutchvelocity_ref
       setClutch(saveVals.clutchState);
+      joint_.setCommand(0);
     }
-
-
-
 
 
     //-------------------
@@ -251,15 +269,15 @@ public:
           float64  velocity_ref
           float64  commanded_effort
           float64  analogIN0          */
-      realtime_pub->msg_.position           = saveVals.errSum;//position;
+      realtime_pub->msg_.position           = position;//position;
       realtime_pub->msg_.velocity           = velocity;
       realtime_pub->msg_.velocity_ref       = saveVals.vel_ref;
-      realtime_pub->msg_.analogIN0          = analogIN0;
+      realtime_pub->msg_.analogIN0          = calcAngle(analogIN0);
       realtime_pub->msg_.dt                 = dur;
       realtime_pub->msg_.commanded_effort   = saveVals.pwm;
       realtime_pub->msg_.displacement       = displacement;
       realtime_pub->msg_.displacement_ref   = saveVals.ref;
-      realtime_pub->msg_.current            = saveVals.errSumDisp;
+      realtime_pub->msg_.current            = 93.143*(displacement*15)/1000;
       realtime_pub->msg_.clutchState        = saveVals.clutchState;
       realtime_pub->unlockAndPublish();
     }
