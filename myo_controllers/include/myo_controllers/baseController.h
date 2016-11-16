@@ -17,6 +17,28 @@
 
 namespace myo_controllers{
 
+  class simpleLowPass
+  {
+  public:
+    simpleLowPass(double alpha_in);
+    double calcU(double input);
+  private:
+    double alpha;
+    double oldVal;
+  };
+
+  class compensateEMF
+  {
+  public:
+    compensateEMF(int max_in, int min_in, int slope_in);
+    int calcU(int pwm,double velocity);
+  private:
+    int max;
+    int min;
+    int slope;
+    int oldPWM;
+  };
+
   class pidControl
   {
   public:
@@ -26,7 +48,7 @@ namespace myo_controllers{
           bool setPID(double pval,double ival,double dval);
           static bool handleRX(std::string,double P,double I,double D);
 
-  private:
+  protected:
 
           static std::map<std::string,pidControl*> pidmap;
 
@@ -46,6 +68,21 @@ namespace myo_controllers{
 
   };
 
+  class ffControl : public pidControl
+  {
+  public:
+    ffControl(const char* inputName) : pidControl(inputName) {};
+    int calcU(double ref);
+  };
+
+  class angleNorm : public pidControl
+  {
+  public:
+    angleNorm(const char* inputName) : pidControl(inputName) {};
+    double calcU(double ref);
+  };
+
+
 class baseController : public controller_interface::Controller<myo_interface::MyoMuscleJointInterface>
 {
 public:
@@ -54,7 +91,7 @@ public:
         // reserve memory for Service & Topic Broadcaster
         ros::ServiceServer srvREF_;
         ros::ServiceServer srvPID_;
-        ros::ServiceServer srvFF_;
+        ros::ServiceServer srvCLT_;
 
         // RealtimePublisher
         realtime_tools::RealtimePublisher<myo_msgs::statusMessage> *realtime_pub;
@@ -105,13 +142,17 @@ public:
          */
         bool setPID( myo_msgs::SetPID::Request& req, myo_msgs::SetPID::Response& resp);
 
+        void setDebugMode(bool mode);
+
+        bool CLTRxHandle( myo_msgs::SetClutch::Request& req, myo_msgs::SetClutch::Response& resp);
+
         /**
          * @brief A function to (de)couple clutch
          * @param[in] input New state for Clutch
          * @return successful or not
          * @TODO actually evaluate if setting clutch worked (i.e. dont always return true)
          */
-        bool setClutch(bool input);
+        bool setClutchState(bool input);
 
         //**************
         // Needed to satisfy ROS_Controller Hardwareinterface
@@ -128,11 +169,15 @@ public:
         //**************
 
         bool getData();
-        void loop();
-        bool startup();
+        virtual void loop() = 0;
+        virtual bool startup() = 0;
         void publish();
         // Handle to ROS-control Joint
         myo_interface::MyoMuscleJointHandle joint_;
+
+protected:
+
+        bool debugMode;
 
 private:
 
@@ -140,7 +185,8 @@ private:
         // absolute Time of last loop start
         struct timespec no;
 
-
+        // counter for braking time
+        int counter;
 };
 
 }

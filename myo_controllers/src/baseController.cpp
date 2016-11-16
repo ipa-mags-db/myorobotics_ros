@@ -1,6 +1,59 @@
 #include "myo_controllers/baseController.h"
 
+#define PWMLIMIT 4000
+
 namespace myo_controllers {
+
+
+//----------------------
+//-- Helper functions --
+//----------------------
+
+template <typename T> int sgn(T val) {
+        return ((T(0) < val) - (val < T(0)));
+}
+
+
+
+simpleLowPass::simpleLowPass(double alpha_in){
+        if(alpha_in > 0 && alpha_in < 1)
+                alpha = alpha_in;
+        else
+                alpha = 0.5;
+        oldVal = 0;
+}
+double simpleLowPass::calcU(double input){
+        oldVal =  alpha*input + (1-alpha)*oldVal;
+        return oldVal;
+}
+
+
+
+
+//-----------------------------
+//--- Compansate backEMF ------
+//-----------------------------
+compensateEMF::compensateEMF(int max_in, int min_in, int slope_in){
+        compensateEMF::max = max_in;
+        compensateEMF::min = min_in;
+        compensateEMF::slope = slope_in;
+        oldPWM = 0;
+        ROS_INFO("setting to max %d, min %d, slope %d",max,min,slope);
+
+}
+
+int compensateEMF::calcU(int pwm, double velocity){
+        int maxPWM = max - slope*(int)fabs(velocity);
+        if(maxPWM < min)
+                maxPWM = min;
+        // Check if pwm change violates backEMF condition
+        if(abs(pwm - oldPWM) > maxPWM) {
+                //  ROS_INFO("signum: %d , maxPWM: , oldPWM ")
+                pwm = myo_controllers::sgn(pwm-oldPWM)*maxPWM + oldPWM;
+        }
+        oldPWM = pwm;
+        return pwm;
+};
 
 //-----------------------------
 //-- PID Controller -----------
@@ -75,9 +128,33 @@ bool pidControl::handleRX(std::string name, double P, double I, double D) {
         }
 };
 
+
+
+int ffControl::calcU(double ref) {
+        int pwm = (int)(pgain * ref);
+        pwm += (int)igain*sgn(ref);
+        if(abs(pwm) > maxpwm)
+                pwm = sgn(pwm)*maxpwm;
+        return pwm;
+}
+
+
+double angleNorm::calcU(double ref) {
+        double maxSensor = igain;
+        double setPoint  = pgain;
+        return (360*(ref-setPoint)/maxSensor);
+}
+
+
+
 //----------------------------------
 //-- base Class for Controllers ----
 //----------------------------------
+
+void baseController::setDebugMode(bool mode){
+        debugMode = mode;
+};
+
 
 double baseController::calcAngle(double sensorVal) {
         double maxSensor = 4096;
@@ -116,8 +193,16 @@ bool baseController::setPID(myo_msgs::SetPID::Request &req,
         resp.dgain  = req.dgain;
         return state;
 };
+bool baseController::CLTRxHandle( myo_msgs::SetClutch::Request& req,
+                                  myo_msgs::SetClutch::Response& resp)
+{
+        bool nState = req.clutchState;
+        setClutchState(nState);
+        resp.clutchState = procVars.clutchState;
+}
 
-bool baseController::setClutch(bool input) {
+bool baseController::setClutchState(bool input) {
+        procVars.clutchState = input;
         joint_.setDigitalOut(input);
         ROS_INFO("Setting Clutch to %d", input);
         return true;
@@ -141,12 +226,15 @@ bool baseController::init(myo_interface::MyoMuscleJointInterface *hw,
         procVars.pwm = 0;
         procVars.clutchState = false;
         procVars.ref = 0;
+        counter = 0;
+        debugMode = 1;
 
         getData();
 
         // Advertise Service and Publisher
-        srvREF_ = n.advertiseService("set_reference", &baseController::setReference, this);
-        srvPID_ = n.advertiseService("set_controll", &baseController::setPID, this);
+        srvREF_ = n.advertiseService("set_ref", &baseController::setReference, this);
+        srvPID_ = n.advertiseService("set_ctr", &baseController::setPID, this);
+        srvCLT_ = n.advertiseService("set_clt", &baseController::CLTRxHandle, this);
 
         realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(
                 n, "DebugMessage", 25);
@@ -163,13 +251,6 @@ bool baseController::getData(){
         data.analogIN0      = joint_.getAnalogIn(0);
 }
 
-bool baseController::startup(){
-        return true;
-}
-
-void baseController::loop(){
-        //ROS_INFO("replace this loop");
-}
 
 void baseController::publish(){
         if (realtime_pub->trylock()) {
@@ -206,6 +287,20 @@ void baseController::update(const ros::Time& time, const ros::Duration& period){
         clock_gettime(CLOCK_MONOTONIC, &this->no);
         getData();
         loop();
+        if (counter == 0)
+        {
+                if(abs(procVars.pwm) > PWMLIMIT) {
+                        ROS_WARN("PWM greater than %d (= %f)! Braking Motor!",PWMLIMIT, 100.0*(double)PWMLIMIT/4000.0);
+                        procVars.pwm = 0;
+                        counter = 1000;
+                };
+        }
+        else{
+                procVars.pwm = 0;
+                counter--;
+        }
+        if(debugMode == 0)
+                joint_.setCommand((double)procVars.pwm);
         publish();
 }
 
@@ -215,14 +310,6 @@ void baseController::stopping(const ros::Time& time){
 
 void baseController::starting(const ros::Time& time){
 
-}
-
-//----------------------
-//-- Helper functions --
-//----------------------
-
-template <typename T> int sgn(T val) {
-        return ((T(0) < val) - (val < T(0)));
 }
 
 }
