@@ -37,6 +37,7 @@ public:
     double          err;
     double          errSum;
     struct timespec oldTime;
+    double          oldPwm;
   } saveVals;
 
   struct PID
@@ -55,6 +56,9 @@ public:
   realtime_tools::RealtimePublisher<myo_msgs::statusMessage> *realtime_pub;
 
 
+  template <typename T> int sgn(T val){
+    return ((T(0) < val) - (val < T(0)));
+  }
 
   //----------------------
   //-- ROS Service call --
@@ -80,7 +84,6 @@ public:
       pid.pgain   = req.pgain;
       pid.igain   = req.igain;
       pid.dgain   = req.dgain;
-      pid.ffgain  = req.ffgain;
 
       ROS_INFO("Change PID to P: %f, I: %f, D:%f",pid.pgain, pid.igain, pid.dgain);
     } else
@@ -89,7 +92,6 @@ public:
       resp.pgain  = pid.pgain;
       resp.igain  = pid.igain;
       resp.dgain  = pid.dgain;
-      resp.ffgain = pid.ffgain;
   }
 
   bool setClutchState( myo_msgs::SetClutch::Request& req,
@@ -126,6 +128,7 @@ public:
     saveVals.clutchState = true;
     saveVals.err = 0;
     saveVals.errSum = 0;
+    saveVals.oldPwm = 0;
     pid.pgain = -10;
     pid.igain = 0;
     pid.dgain = 0;
@@ -145,7 +148,7 @@ public:
     realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::statusMessage>(n, "DebugMessage", 25);
 
     // Clutch on
-    setClutch(true);
+    setClutch(false);
 
     // Exit graciously
     return true;
@@ -204,7 +207,20 @@ public:
     // set saveVals.pwm cycle [-4000;4000]
     if(abs(saveVals.pwm) > MAXPWM)
       saveVals.pwm = saveVals.pwm/abs(saveVals.pwm) *MAXPWM;
+
+    //------------------------
+    //-- Compensate BackEMF --
+    //------------------------
+    double maxPWM = 2000 - 20*fabs(velocity);
+    if(maxPWM < 200)
+      maxPWM = 200;
+
+    // Check if pwm change violates backEMF condition
+    if(fabs(saveVals.pwm -saveVals.oldPwm) > maxPWM)
+      saveVals.pwm = sgn(saveVals.pwm-saveVals.oldPwm)*maxPWM + saveVals.oldPwm;
     joint_.setCommand(saveVals.pwm);
+
+    saveVals.oldPwm = saveVals.pwm;
 
 
     //------------------
@@ -212,7 +228,7 @@ public:
     //------------------
     struct timespec no;
     clock_gettime(CLOCK_MONOTONIC, &no);
-    ros::Duration dur(no.tv_sec - saveVals.oldTime.tv_sec, no.tv_nsec - saveVals.oldTime.tv_nsec);
+    ros::Time dur(no.tv_sec, no.tv_nsec);
     saveVals.oldTime = no;
 
     //-------------------------
@@ -240,12 +256,11 @@ public:
           float64  analogIN0          */
       realtime_pub->msg_.position           = position;
       realtime_pub->msg_.velocity           = velocity;
-      realtime_pub->msg_.velocity_ref       = saveVals.vel_ref;
       realtime_pub->msg_.analogIN0          = analogIN0;
-      realtime_pub->msg_.dt                 = dur;
+      realtime_pub->msg_.time               = dur;
       realtime_pub->msg_.commanded_effort   = saveVals.pwm;
       realtime_pub->msg_.displacement       = displacement;
-      realtime_pub->msg_.displacement_ref   = saveVals.ref;
+      realtime_pub->msg_.reference          = saveVals.ref;
       realtime_pub->msg_.current            = saveVals.filteredCurrent;
       realtime_pub->msg_.clutchState        = saveVals.clutchState;
       realtime_pub->unlockAndPublish();

@@ -203,7 +203,7 @@ void SrSPIMyo::packCommand(unsigned char *buffer, bool halt, bool reset)
 	RONEX_COMMAND_02000002* command = reinterpret_cast<RONEX_COMMAND_02000002*>(buffer);
 
 	// Set Command-Type
-	command->command_type = RONEX_COMMAND_02000002_COMMAND_TYPE_NORMAL
+	command->command_type = RONEX_COMMAND_02000002_COMMAND_TYPE_NORMAL;
 
 	// Configure SlaveSelect on all 4 SPI-Ports
 	int16u dio = 0;

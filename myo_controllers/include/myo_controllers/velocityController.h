@@ -36,6 +36,7 @@ public:
     double          err;
     double          errSum;
     struct timespec oldTime;
+    double          oldPwm;
   } saveVals;
 
   struct PID
@@ -121,13 +122,14 @@ public:
     saveVals.ref = 10;
     saveVals.filteredCurrent = 0;
     saveVals.pwm = 0;
+    saveVals.oldPwm = 0;
     saveVals.clutchState = true;
     saveVals.err = 0;
     saveVals.errSum = 0;
     pid.pgain = -10;
     pid.igain = 0;
-    pid.dgain = 0;
-    pid.ffgain = 1;
+    pid.dgain = -2;
+    pid.ffgain = 0;
     pid.ffset  = 0;
 
     struct timespec no;
@@ -161,9 +163,9 @@ public:
     double displacement   = joint_.getDisplacement();
     double analogIN0      = joint_.getAnalogIn(0);
 
-
     // filter current
     saveVals.filteredCurrent = 0.95*saveVals.filteredCurrent + 0.05*effort;
+
 
     //-------------------------
     //-- Velocity Controller --
@@ -175,7 +177,7 @@ public:
 
 
     // Feedforward
-    saveVals.pwm = (saveVals.vel_ref -  pid.ffset*sgn(saveVals.vel_ref))/pid.ffgain;
+    saveVals.pwm = pid.ffgain * saveVals.vel_ref + pid.ffset*sgn(saveVals.vel_ref);
 
     // Feedback P-Controller
       // calc error
@@ -195,19 +197,27 @@ public:
       // update oldError sum
       saveVals.err = err;
 
-
-
-
-    double pwm_before = saveVals.pwm;
-
     // limit pwm to +/-3999
     if(fabs(saveVals.pwm) > MAXPWM)
       saveVals.pwm = sgn(saveVals.pwm) *MAXPWM;
 
     // anti-Windup
-    saveVals.errSum += 10*(pwm_before - saveVals.pwm);
+    saveVals.errSum += 10*(saveVals.oldPwm - saveVals.pwm);
 
+
+    //------------------------
+    //-- Compensate BackEMF --
+    //------------------------
+    double maxPWM = 2000 - 20*fabs(velocity);
+    if(maxPWM < 200)
+      maxPWM = 200;
+
+    // Check if pwm change violates backEMF condition
+    if(fabs(saveVals.pwm -saveVals.oldPwm) > maxPWM)
+      saveVals.pwm = sgn(saveVals.pwm-saveVals.oldPwm)*maxPWM + saveVals.oldPwm;
     joint_.setCommand(saveVals.pwm);
+
+    saveVals.oldPwm = saveVals.pwm;
 
 
     //------------------
@@ -242,7 +252,7 @@ public:
           float64  velocity_ref
           float64  commanded_effort
           float64  analogIN0          */
-      realtime_pub->msg_.position           = saveVals.errSum;//position;
+      realtime_pub->msg_.position           = position;//position;
       realtime_pub->msg_.velocity           = velocity;
       realtime_pub->msg_.velocity_ref       = saveVals.vel_ref;
       realtime_pub->msg_.analogIN0          = analogIN0;

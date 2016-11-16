@@ -27,4 +27,22 @@
 		</description>
 	</class>
 
+	<class
+		name="myo_controllers/angleController"
+		type="myo_controllers::angleController"
+		base_class_type="controller_interface::ControllerBase">
+		<description>
+			This is a angle Controller. [angle in deg]
+		</description>
+	</class>
+
+	<class
+		name="myo_controllers/testController"
+		type="myo_controllers::testController"
+		base_class_type="controller_interface::ControllerBase">
+		<description>
+			This is a test Controller
+		</description>
+	</class>
+
 </library>
