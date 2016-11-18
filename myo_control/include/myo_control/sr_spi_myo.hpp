@@ -39,73 +39,90 @@
 class SrSPIMyo : public EthercatDevice
 {
 public:
-  virtual void construct(EtherCAT_SlaveHandler *sh, int &start_address);
-  virtual int initialize(hardware_interface::HardwareInterface *hw, bool allow_unprogrammed = true);
+virtual void construct(EtherCAT_SlaveHandler *sh, int &start_address);
+virtual int initialize(hardware_interface::HardwareInterface *hw, bool allow_unprogrammed = true);
 
-  SrSPIMyo();
-  virtual ~SrSPIMyo();
+SrSPIMyo();
+virtual ~SrSPIMyo();
 
 protected:
-  /// Replaces the product ID with a human readable product alias.
-  static const char product_alias_[];
+/// Replaces the product ID with a human readable product alias.
+static const char product_alias_[];
 
-  /// A unique identifier for the ronex (either serial number or alias if provided)
-  std::string ronex_id_;
+/// A unique identifier for the ronex (either serial number or alias if provided)
+std::string ronex_id_;
 
-  std::string reason_;
-  int level_;
+std::string reason_;
+int level_;
 
-  int command_base_;
-  int status_base_;
+int command_base_;
+int status_base_;
 
-  ros::NodeHandle node_;
+ros::NodeHandle node_;
 
-  /// The SPI module which is added as a CustomHW to the hardware interface
-  ronex::SPI* spi_;
+/// The SPI module which is added as a CustomHW to the hardware interface
+ronex::SPI* spi_;
 
-  /**
-   * A counter used to publish the data at 100Hz:
-   *  count 10 cycles, then reset the cycle_count to 0.
-   */
-  int16_t cycle_count_;
+/**
+ * A counter used to publish the data at 100Hz:
+ *  count 10 cycles, then reset the cycle_count to 0.
+ */
+int16_t cycle_count_;
 
-  /// the digital commands sent at each cycle (updated when we call the topic)
-  int32u digital_commands_;
+/// the digital commands sent at each cycle (updated when we call the topic)
+int32u digital_commands_;
 
-  /// Name under which the RoNeX will appear (prefix the topics etc...)
-  std::string device_name_;
-  std::string serial_number_;
+/// Name under which the RoNeX will appear (prefix the topics etc...)
+std::string device_name_;
+std::string serial_number_;
 
-  /// Offset of device position from first device
-  int device_offset_;
+/// Offset of device position from first device
+int device_offset_;
 
-  /// False to run digital pins as output, True to run as input
-  std::vector<bool> input_mode_;
+/// False to run digital pins as output, True to run as input
+std::vector<bool> input_mode_;
 
-  void packCommand(unsigned char *buffer, bool halt, bool reset);
-  bool unpackState(unsigned char *this_buffer, unsigned char *prev_buffer);
+/**
+ * @brief Function to pack SPI messages into an EtherCAT Frame
+ * @param char* buffer
+ * @param bool halt
+ * @param bool reset
+ */
+void packCommand(unsigned char *buffer, bool halt, bool reset);
 
-  void diagnostics(diagnostic_updater::DiagnosticStatusWrapper &d, unsigned char *buffer);
+/**
+ * @brief Function to unpack SPI messages from an incoming EtherCAT Frame
+ * @param unsigned char* this_buffer
+ * @param unsigned char* prev_buffer
+ */
+bool unpackState(unsigned char *this_buffer, unsigned char *prev_buffer);
 
-  /// publisher for the data.
-  boost::scoped_ptr<realtime_tools::RealtimePublisher<sr_ronex_msgs::SPIState> > state_publisher_;
-  /// Temporary message
-  sr_ronex_msgs::SPIState state_msg_;
+/**
+ * @brief Function to update Diagnostics
+ * @param DiagnosticStatusWrapper& d
+ * @param unsigned char* buffer
+ */
+void diagnostics(diagnostic_updater::DiagnosticStatusWrapper &d, unsigned char *buffer);
 
-  /// building the topics for publishing the state.
-  void build_topics_();
+/// publisher for the data.
+boost::scoped_ptr<realtime_tools::RealtimePublisher<sr_ronex_msgs::SPIState> > state_publisher_;
+/// Temporary message
+sr_ronex_msgs::SPIState state_msg_;
 
-  /// Id of this ronex on the parameter server
-  int parameter_id_;
+/// building the topics for publishing the state.
+void build_topics_();
 
-  /// Joint States
-  ros_ethercat_model::JointState* joint_states_[4];
+/// Id of this ronex on the parameter server
+int parameter_id_;
+
+/// Joint States
+ros_ethercat_model::JointState* joint_states_[4];
 };
 
 /* For the emacs weenies in the crowd.
    Local Variables:
    c-basic-offset: 2
    End:
-*/
+ */
 
 #endif /* _SR_SPI_MYO_HPP_ */
