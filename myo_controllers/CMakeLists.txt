@@ -122,11 +122,10 @@ include_directories( include
 ## Declare a C++ library
 add_library(myo_controllers
   #src/velocityController.cpp
-  #src/displacementController.cpp
+  src/displacementController.cpp
   src/directController.cpp
   #src/angleController.cpp
   src/baseController.cpp
-  src/testController.cpp
 )
 
 ## Add cmake target dependencies of the library
