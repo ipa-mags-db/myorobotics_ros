@@ -4,7 +4,6 @@
    contain the root `toctree` directive.
 
 ######################################################
-
 MYO Robotics ROS Package Documentation
 ######################################################
 
