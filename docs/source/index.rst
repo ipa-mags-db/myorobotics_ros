@@ -5,7 +5,7 @@
 
 ######################################################
 
-Welcome to MYO Robotics ROS Package's documentation!
+MYO Robotics ROS Package Documentation
 ######################################################
 
 Contents:

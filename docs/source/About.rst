@@ -6,4 +6,6 @@ MYO Robotics is a EU-funded project
 
 http://myorobotics.eu/
 
-.. todo:: include BIONIC Joint, IPA and other related people
+at partly developed at `Fraunhofer IPA <http://ipa.fraunhofer.de>`_
+
+at the `lightweight and soft robotics team <http://www.ipa.fraunhofer.de/en/lightweightrobots.html>`_
