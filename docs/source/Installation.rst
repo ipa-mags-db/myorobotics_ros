@@ -98,9 +98,24 @@ You can find a :doc:`bashscript<cyclictestscript>` for testing
 
   Install PREEMPT-RT
 
+
+
+Install ROS Indigo
+===================
+
+.. note:: For now RoNex just supports the Indigo version of ROS.
+
+See `ROS Wiki <http://wiki.ros.org/indigo/Installation/Ubuntu>`_
+
+
 .. todo::
 
   Install ROS Indigo
+
+Install RoNex driver and dependencies
+========================================
+
+See `RoNex Wiki <http://sr-ronex.readthedocs.io/en/latest/General/Setting-up-your-computer.html>`_
 
 .. todo::
 
