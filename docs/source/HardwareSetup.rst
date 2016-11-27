@@ -39,7 +39,7 @@ Connectors
 Parts overview
 -------------------
 
-Part No @ Farnell
+Part No @ Molex
 
 RoNex
 
@@ -90,5 +90,9 @@ For the configuration mostly two values are important to get useful values:
 +----------------+-------------+
 | Cycle time     |   ca 50     |
 +----------------+-------------+
+
+.. todo:: insert example script
+
+.. todo:: add repo for firmware setter
 
 .. todo:: document other values in config
