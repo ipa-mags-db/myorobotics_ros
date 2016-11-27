@@ -34,6 +34,7 @@ extensions = [
     #'breathe',
     'sphinx.ext.todo',
     'sphinx.ext.graphviz',
+    'sphinx.ext.imgmath'
 ]
 
 # breathe_projects = { "MYO Robotics ROS Package: ../" }
