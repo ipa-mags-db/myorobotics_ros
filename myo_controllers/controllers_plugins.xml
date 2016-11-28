@@ -36,4 +36,13 @@
 		</description>
 	</class>
 
+	<class
+		name="myo_controllers/t1Controller"
+		type="myo_controllers::t1Controller"
+		base_class_type="controller_interface::ControllerBase">
+		<description>
+			This is a displacement Controller. [displacment in counts ~ 15 µm/count]
+		</description>
+	</class>
+
 </library>

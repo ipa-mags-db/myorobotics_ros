@@ -311,6 +311,12 @@ bool SrSPIMyo::unpackState(unsigned char *this_buffer, unsigned char *prev_buffe
 																								{
 																																joint_states_[spi_index]->analogIN_[i] = status_data->info_type.status_data.analogue_in[i];
 																								}
+
+																								for (int i = 6; i <32+6; ++i)
+																								{
+																																joint_states_[spi_index]->analogIN_[i] = (double)data[i-6];
+																								}
+
 																}
 
 																for (size_t analogue_index = 0; analogue_index < NUM_ANALOGUE_INPUTS; ++analogue_index)
