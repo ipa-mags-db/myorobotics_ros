@@ -9,18 +9,10 @@
 #include <realtime_tools/realtime_publisher.h>
 
 // Messages
-#include <myo_msgs/SetReference.h>
-#include <myo_msgs/SetClutch.h>
-#include <myo_msgs/SetPID.h>
-#include <myo_msgs/statusMessage.h>
+#include <myo_msgs/analogMessage.h>
 
 #include <sstream>
 #include <string>
-
-#define MAXCUR 50000
-#define MAXREF 3999
-#define MAXPWM 3999
-
 
 namespace myo_controllers{
 
@@ -30,6 +22,8 @@ public:
   int count;
   std::string s;
   std::stringstream ss;
+  double analogIN[6];
+  realtime_tools::RealtimePublisher<myo_msgs::analogMessage> *realtime_pub;
 
   bool init(myo_interface::MyoMuscleJointInterface* hw, ros::NodeHandle &n)
   {
@@ -39,8 +33,12 @@ public:
             return false;
     }
 
-    // get the joint object to use in the realtime loop
+    clock_gettime(CLOCK_MONOTONIC, &this->no);
+
+    // get the joint object to use in the realtime loops
     joint_ = hw->getHandle(my_joint);
+
+    realtime_pub = new realtime_tools::RealtimePublisher<myo_msgs::analogMessage>(n, "AnalogDataMessage", 25);
 
     s = " ";
     count = 0;
@@ -53,22 +51,39 @@ public:
     int hz = 1000;
 
     // get sensor values
-    double position       = joint_.getPosition();
-    double velocity       = joint_.getVelocity();
-    double effort         = joint_.getEffort();
-    double displacement   = joint_.getDisplacement();
-    double analogIN0      = joint_.getAnalogIn(0);
 
-    if(count%10000){
+    for( int i = 0; i<6  ; ++i)
+          analogIN[i] = joint_.getAnalogIn(i);
+
+    if(count%1000000){
 
       for(int i = 0 ; i<6; ++i)
-        ss << std::hex << (int)joint_.getAnalogIn(i) << " ";
+        ss << joint_.getAnalogIn(i) << " ";
       s = ss.str();
       ROS_INFO_STREAM(s);
       s.clear();
       ss.str("");
-
     }
+    clock_gettime(CLOCK_MONOTONIC, &this->no);
+
+    if (realtime_pub->trylock()) {
+
+            ros::Time t1(no.tv_sec, no.tv_nsec);
+
+            realtime_pub->msg_.time       = t1;
+
+
+            realtime_pub->msg_.analogIN0  = analogIN[0];
+            realtime_pub->msg_.analogIN1  = analogIN[1];
+            realtime_pub->msg_.analogIN2  = analogIN[2];
+            realtime_pub->msg_.analogIN3  = analogIN[3];
+            realtime_pub->msg_.analogIN4  = analogIN[4];
+            realtime_pub->msg_.analogIN5  = analogIN[5];
+
+            realtime_pub->unlockAndPublish();
+
+    };
+
 
 
     count++;
@@ -78,8 +93,10 @@ public:
   void stopping(const ros::Time& time) {
   }
 
+
 private:
   myo_interface::MyoMuscleJointHandle joint_;
+  struct timespec no;
 };
 }
 #endif
