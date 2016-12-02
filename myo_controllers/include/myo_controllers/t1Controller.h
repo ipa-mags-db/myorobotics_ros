@@ -7,6 +7,7 @@
 // ROS Stuff
 #include <ros/ros.h>
 #include <realtime_tools/realtime_publisher.h>
+#include <stdint.h>
 
 // Messages
 #include <myo_msgs/analogMessage.h>
@@ -53,12 +54,12 @@ public:
     // get sensor values
 
     for( int i = 0; i<6  ; ++i)
-          analogIN[i] = joint_.getAnalogIn(i);
+          analogIN[i] =(double)(int16_t)joint_.getAnalogIn(i);
 
-    if(count%1000000){
+    if(count%(5*1000)==0){
 
       for(int i = 0 ; i<6; ++i)
-        ss << joint_.getAnalogIn(i) << " ";
+        ss << (int16_t)joint_.getAnalogIn(i) << " ";
       s = ss.str();
       ROS_INFO_STREAM(s);
       s.clear();
@@ -73,12 +74,12 @@ public:
             realtime_pub->msg_.time       = t1;
 
 
-            realtime_pub->msg_.analogIN0  = analogIN[0];
-            realtime_pub->msg_.analogIN1  = analogIN[1];
-            realtime_pub->msg_.analogIN2  = analogIN[2];
-            realtime_pub->msg_.analogIN3  = analogIN[3];
-            realtime_pub->msg_.analogIN4  = analogIN[4];
-            realtime_pub->msg_.analogIN5  = analogIN[5];
+            realtime_pub->msg_.analogIN0  = (double)analogIN[0];
+            realtime_pub->msg_.analogIN1  = (double)analogIN[1];
+            realtime_pub->msg_.analogIN2  = (double)analogIN[2];
+            realtime_pub->msg_.analogIN3  = (double)analogIN[3];
+            realtime_pub->msg_.analogIN4  = (double)analogIN[4];
+            realtime_pub->msg_.analogIN5  = (double)analogIN[5];
 
             realtime_pub->unlockAndPublish();
 
